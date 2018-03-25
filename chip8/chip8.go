@@ -1,6 +1,7 @@
 package chip8
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/redmed666/gochip8/util"
@@ -11,7 +12,7 @@ type Chip8 struct {
 	opcode     uint16      // 1 opcode == 2 bytes
 	memory     [4096]uint8 // memory == 4096 bytes
 	V          [16]uint8   // array of registers => 1 register == 1 byte
-	I          uint16
+	I          uint16      // index reg
 	PC         uint16
 	gfx        [64 * 32]uint8 // black and white screen of 64 pixels by 32
 	delayTimer uint8
@@ -41,14 +42,14 @@ var fontset = [80]byte{
 	0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 }
 
-func (chip8 *Chip8) setupGraphics() {
+func (chip8 *Chip8) SetupGraphics() {
 }
 
-func (chip8 *Chip8) setupInput() {
+func (chip8 *Chip8) SetupInput() {
 
 }
 
-func (chip8 *Chip8) initialize() {
+func (chip8 *Chip8) Initialize() {
 	chip8.PC = 0x200
 	chip8.opcode = 0
 	chip8.I = 0
@@ -75,7 +76,7 @@ func (chip8 *Chip8) initialize() {
 	chip8.soundTimer = 0
 }
 
-func (chip8 *Chip8) loadGame(gamePath string) {
+func (chip8 *Chip8) LoadGame(gamePath string) {
 	file, err := os.Open(gamePath)
 	util.CheckError(err)
 	fileStat, err := file.Stat()
@@ -88,10 +89,101 @@ func (chip8 *Chip8) loadGame(gamePath string) {
 	}
 }
 
-func (chip8 *Chip8) emulateCycle() {
+func (chip8 *Chip8) EmulateCycle() {
+	chip8.opcode = ((uint16(chip8.memory[chip8.PC]) << 8) | uint16(chip8.memory[chip8.PC+1]))
 
+	switch opcode := chip8.opcode & 0xf000; opcode {
+
+	case 0x0000:
+		switch opcode & 0x000f {
+		case 0x0000:
+			break
+
+		case 0x000e:
+			break
+
+		default:
+			fmt.Printf("Unknown opcode:0x%X\n", opcode)
+			chip8.PC += 2
+			break
+		}
+
+	case 0x0004:
+		fmt.Println("case 0x0004")
+		if chip8.V[(opcode&0x00f0)>>4] > (0xff - chip8.V[(opcode&0x0f00)>>8]) {
+			chip8.V[0xf] = 1 // carry
+		} else {
+			chip8.V[0xf] = 0
+		}
+
+		chip8.V[(opcode&0x0f00)>>8] += chip8.V[(opcode&0x00f0)>>4]
+		chip8.PC += 2
+		break
+
+	case 0x0033:
+		fmt.Println("case 0x0033")
+		chip8.memory[chip8.I] = chip8.V[(opcode&0x0f00)>>8] / 100
+		chip8.memory[chip8.I+1] = (chip8.V[(opcode&0x0f00)>>8] / 10) % 10
+		chip8.memory[chip8.I+2] = (chip8.V[(opcode&0x0f00)>>8] % 100) % 10
+		chip8.PC += 2
+		break
+
+	case 0x2000:
+		fmt.Println("case 0x2000")
+		fmt.Printf("chip8.SP = 0x%X\n", chip8.SP)
+		chip8.stack[chip8.SP] = chip8.PC
+		chip8.SP++
+		chip8.PC = opcode & 0x0fff
+		break
+
+	case 0xa000:
+		fmt.Println("case 0xa000")
+		chip8.I = opcode & 0xf000
+		chip8.PC += 2
+		break
+
+	case 0xd000:
+		x := uint16(chip8.V[(opcode&0x0f00)>>8])
+		y := uint16(chip8.V[(opcode&0x00f0)>>4])
+		height := opcode & 0x000f
+		var pixel uint8
+
+		chip8.V[0xf] = 0
+
+		for yline := uint16(0); yline < height; yline++ {
+			pixel = chip8.memory[chip8.I+yline]
+
+			for xline := uint16(0); xline < 8; xline++ {
+				if pixel&(0x80>>xline) != 0 {
+					if chip8.gfx[x+xline+((y+yline)*64)] == 1 {
+						chip8.V[0xf] = 1
+					}
+					chip8.gfx[(x + xline + ((y + yline) * 64))] ^= 1
+				}
+			}
+		}
+		chip8.drawFlag = 1
+		chip8.PC += 2
+		break
+
+	default:
+		fmt.Printf("Unknown opcode:0x%X\n", opcode)
+		chip8.PC += 2
+		break
+	}
+
+	if chip8.delayTimer > 0 {
+		chip8.delayTimer--
+	}
+
+	if chip8.soundTimer > 0 {
+		if chip8.soundTimer == 1 {
+			fmt.Println("BEEP")
+		}
+		chip8.soundTimer--
+	}
 }
 
-func (chip8 *Chip8) setKeys() {
+func (chip8 *Chip8) SetKeys() {
 
 }
