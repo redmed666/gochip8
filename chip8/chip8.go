@@ -168,7 +168,15 @@ func (chip8 *Chip8) EmulateCycle() {
 			break
 
 		case 0x0004:
+			fmt.Println("case 0x0004")
+			if chip8.V[(chip8.opcode&0x00f0)>>4] > (0xff - chip8.V[(chip8.opcode&0x0f00)>>8]) {
+				chip8.V[0xf] = 1 // carry
+			} else {
+				chip8.V[0xf] = 0
+			}
+
 			chip8.V[(chip8.opcode&0x0f00)>>8] += chip8.V[(chip8.opcode&0x00f0)>>4]
+			chip8.PC += 2
 			break
 
 		case 0x0005:
@@ -191,26 +199,6 @@ func (chip8 *Chip8) EmulateCycle() {
 			fmt.Printf("Unknown opcode:0x%X\n", chip8.opcode)
 			break
 		}
-
-	case 0x0004:
-		fmt.Println("case 0x0004")
-		if chip8.V[(chip8.opcode&0x00f0)>>4] > (0xff - chip8.V[(chip8.opcode&0x0f00)>>8]) {
-			chip8.V[0xf] = 1 // carry
-		} else {
-			chip8.V[0xf] = 0
-		}
-
-		chip8.V[(chip8.opcode&0x0f00)>>8] += chip8.V[(chip8.opcode&0x00f0)>>4]
-		chip8.PC += 2
-		break
-
-	case 0x0033:
-		fmt.Println("case 0x0033")
-		chip8.memory[chip8.I] = chip8.V[(chip8.opcode&0x0f00)>>8] / 100
-		chip8.memory[chip8.I+1] = (chip8.V[(chip8.opcode&0x0f00)>>8] / 10) % 10
-		chip8.memory[chip8.I+2] = (chip8.V[(chip8.opcode&0x0f00)>>8] % 100) % 10
-		chip8.PC += 2
-		break
 
 	case 0xa000:
 		fmt.Println("case 0xa000")
@@ -242,6 +230,16 @@ func (chip8 *Chip8) EmulateCycle() {
 		chip8.PC += 2
 		break
 
+	case 0xf000:
+		switch chip8.opcode & 0x0fff {
+		case 0x0033:
+			fmt.Println("case 0x0033")
+			chip8.memory[chip8.I] = chip8.V[(chip8.opcode&0x0f00)>>8] / 100
+			chip8.memory[chip8.I+1] = (chip8.V[(chip8.opcode&0x0f00)>>8] / 10) % 10
+			chip8.memory[chip8.I+2] = (chip8.V[(chip8.opcode&0x0f00)>>8] % 100) % 10
+			chip8.PC += 2
+			break
+		}
 	default:
 		fmt.Printf("Unknown opcode:0x%X\n", chip8.opcode)
 		break
