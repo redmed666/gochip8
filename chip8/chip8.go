@@ -2,7 +2,9 @@ package chip8
 
 import (
 	"fmt"
-	"os"
+	"io/ioutil"
+	"math/rand"
+	"time"
 
 	"github.com/redmed666/gochip8/util"
 )
@@ -80,20 +82,20 @@ func (chip8 *Chip8) Initialize() {
 }
 
 func (chip8 *Chip8) LoadGame(gamePath string) {
-	file, err := os.Open(gamePath)
+	buf, err := ioutil.ReadFile(gamePath)
 	util.CheckError(err)
-	fileStat, err := file.Stat()
-	util.CheckError(err)
-	data := make([]byte, fileStat.Size())
-	file.Read(data)
 
-	for i := 0; i < len(data); i++ {
-		chip8.memory[512+i] = data[i] // Start filling memory at location 0x200 == 512 in the chip8
+	for i := 0; i < len(buf); i++ {
+		chip8.memory[512+i] = buf[i]
 	}
 }
 
 func (chip8 *Chip8) EmulateCycle() {
 	chip8.opcode = ((uint16(chip8.memory[chip8.PC]) << 8) | uint16(chip8.memory[chip8.PC+1]))
+	fmt.Printf("chip8.PC = 0x%X + opcode = 0x%X\n", chip8.PC, chip8.opcode)
+
+	x := (chip8.opcode & 0x0f00) >> 8
+	y := (chip8.opcode & 0x00f0) >> 4
 
 	switch chip8.opcode & 0xf000 {
 
@@ -124,75 +126,97 @@ func (chip8 *Chip8) EmulateCycle() {
 		break
 
 	case 0x3000:
-		if chip8.V[(chip8.opcode&0x0f00)>>8] == uint8(chip8.opcode&0x00ff) {
+		if chip8.V[x] == uint8(chip8.opcode&0x00ff) {
 			chip8.PC += 2
 		}
 		break
 
 	case 0x4000:
-		if chip8.V[(chip8.opcode&0x0f00)>>8] != uint8(chip8.opcode&0x00ff) {
+		if chip8.V[x] != uint8(chip8.opcode&0x00ff) {
 			chip8.PC += 2
 		}
 		break
 
 	case 0x5000:
-		if chip8.V[(chip8.opcode&0x0f00)>>8] == chip8.V[(chip8.opcode&0x00f0)>>4] {
+		if chip8.V[x] == chip8.V[y] {
 			chip8.PC += 2
 		}
 		break
 
 	case 0x6000:
-		chip8.V[(chip8.opcode&0x0f00)>>8] = uint8(chip8.opcode & 0x00ff)
+		chip8.V[x] = uint8(chip8.opcode & 0x00ff)
 		break
 
 	case 0x7000:
-		chip8.V[(chip8.opcode&0x0f00)>>8] += uint8(chip8.opcode & 0x00ff)
+		chip8.V[x] += uint8(chip8.opcode & 0x00ff)
 		break
 
 	case 0x8000:
 		switch chip8.opcode & 0x000f {
 		case 0x0000:
-			chip8.V[(chip8.opcode&0x0f00)>>8] = chip8.V[(chip8.opcode&0x00f0)>>4]
+			chip8.V[x] = chip8.V[y]
 			break
 
 		case 0x0001:
-			chip8.V[(chip8.opcode&0x0f00)>>8] |= chip8.V[(chip8.opcode&0x00f0)>>4]
+			chip8.V[x] |= chip8.V[y]
 			break
 
 		case 0x0002:
-			chip8.V[(chip8.opcode&0x0f00)>>8] &= chip8.V[(chip8.opcode&0x00f0)>>4]
+			chip8.V[x] &= chip8.V[y]
 			break
 
 		case 0x0003:
-			chip8.V[(chip8.opcode&0x0f00)>>8] ^= chip8.V[(chip8.opcode&0x00f0)>>4]
+			chip8.V[x] ^= chip8.V[y]
 			break
 
 		case 0x0004:
-			fmt.Println("case 0x0004")
-			if chip8.V[(chip8.opcode&0x00f0)>>4] > (0xff - chip8.V[(chip8.opcode&0x0f00)>>8]) {
+			if chip8.V[y] > (0xff - chip8.V[x]) {
 				chip8.V[0xf] = 1 // carry
 			} else {
 				chip8.V[0xf] = 0
 			}
 
-			chip8.V[(chip8.opcode&0x0f00)>>8] += chip8.V[(chip8.opcode&0x00f0)>>4]
-			chip8.PC += 2
+			chip8.V[x] += chip8.V[y]
 			break
 
 		case 0x0005:
-			chip8.V[(chip8.opcode&0x0f00)>>8] -= chip8.V[(chip8.opcode&0x00f0)>>4]
+			if chip8.V[y] > chip8.V[x] {
+				chip8.V[0xf] = 1 // carry
+			} else {
+				chip8.V[0xf] = 0
+			}
+
+			chip8.V[x] -= chip8.V[y]
 			break
 
 		case 0x0006:
-			chip8.V[(chip8.opcode&0x0f00)>>8] = chip8.V[(chip8.opcode&0x0f00)>>8] / 2
+			if chip8.V[(chip8.opcode&0x0f00)]&0x1 == 1 {
+				chip8.V[0xf] = 1
+			} else {
+				chip8.V[0xf] = 0
+			}
+
+			chip8.V[x] >>= 1
 			break
 
 		case 0x0007:
-			chip8.V[(chip8.opcode&0x0f00)>>8] = chip8.V[(chip8.opcode&0x00f0)>>4] - chip8.V[(chip8.opcode&0x0f00)>>8]
+			if chip8.V[y] > chip8.V[x] {
+				chip8.V[0xf] = 1
+			} else {
+				chip8.V[0xf] = 0
+			}
+
+			chip8.V[x] = chip8.V[y] - chip8.V[x]
 			break
 
 		case 0x000e:
-			chip8.V[(chip8.opcode&0x0f00)>>8] = chip8.V[(chip8.opcode&0x0f00)>>8] * 2
+			if chip8.V[(chip8.opcode&0x0f00)]&0x8 == 1 {
+				chip8.V[0xf] = 1
+			} else {
+				chip8.V[0xf] = 0
+			}
+
+			chip8.V[x] <<= 1
 			break
 
 		default:
@@ -200,15 +224,28 @@ func (chip8 *Chip8) EmulateCycle() {
 			break
 		}
 
+	case 0x9000:
+		if chip8.V[x] != chip8.V[y] {
+			chip8.PC += 2
+		}
+		break
+
 	case 0xa000:
-		fmt.Println("case 0xa000")
-		chip8.I = (chip8.opcode & 0xf000) >> 12
-		chip8.PC += 2
+		chip8.I = (chip8.opcode & 0x0fff)
+		break
+
+	case 0xb000:
+		chip8.PC = uint16(chip8.V[0x0]) + (chip8.opcode & 0x0fff)
+		break
+
+	case 0xc000:
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		chip8.V[x] = uint8(r.Intn(255)) & chip8.V[(chip8.opcode&0x00ff)]
 		break
 
 	case 0xd000:
-		x := uint16(chip8.V[(chip8.opcode&0x0f00)>>8])
-		y := uint16(chip8.V[(chip8.opcode&0x00f0)>>4])
+		xPos := uint16(chip8.V[x])
+		yPos := uint16(chip8.V[y])
 		height := chip8.opcode & 0x000f
 		var pixel uint8
 
@@ -219,25 +256,72 @@ func (chip8 *Chip8) EmulateCycle() {
 
 			for xline := uint16(0); xline < 8; xline++ {
 				if pixel&(0x80>>xline) != 0 {
-					if chip8.gfx[x+xline+((y+yline)*64)] == 1 {
+					if chip8.gfx[xPos+xline+((yPos+yline)*64)] == 1 {
 						chip8.V[0xf] = 1
 					}
-					chip8.gfx[(x + xline + ((y + yline) * 64))] ^= 1
+					chip8.gfx[(xPos + xline + ((yPos + yline) * 64))] ^= 1
 				}
 			}
 		}
 		chip8.drawFlag = 1
-		chip8.PC += 2
 		break
 
+	case 0xe000:
+		switch chip8.opcode & 0x00ff {
+		case 0x009e:
+			if chip8.key[chip8.V[x]] != 0 {
+				chip8.PC += 2
+			}
+			break
+
+		case 0x00a1:
+			if chip8.key[chip8.V[x]] == 0 {
+				chip8.PC += 2
+			}
+			break
+		}
+
 	case 0xf000:
-		switch chip8.opcode & 0x0fff {
+		switch chip8.opcode & 0x00ff {
+		case 0x0007:
+			chip8.V[x] = chip8.delayTimer
+			break
+
+		case 0x000a:
+			break
+
+		case 0x0015:
+			chip8.delayTimer = chip8.V[x]
+			break
+
+		case 0x0018:
+			chip8.soundTimer = chip8.V[x]
+			break
+
+		case 0x001e:
+			chip8.I += uint16(chip8.V[x])
+			break
+
+		case 0x0029:
+			chip8.I = uint16(chip8.V[x] * 5)
+			break
+
 		case 0x0033:
-			fmt.Println("case 0x0033")
-			chip8.memory[chip8.I] = chip8.V[(chip8.opcode&0x0f00)>>8] / 100
-			chip8.memory[chip8.I+1] = (chip8.V[(chip8.opcode&0x0f00)>>8] / 10) % 10
-			chip8.memory[chip8.I+2] = (chip8.V[(chip8.opcode&0x0f00)>>8] % 100) % 10
-			chip8.PC += 2
+			chip8.memory[chip8.I] = chip8.V[x] / 100
+			chip8.memory[chip8.I+1] = (chip8.V[x] / 10) % 10
+			chip8.memory[chip8.I+2] = (chip8.V[x] % 100) % 10
+			break
+
+		case 0x0055:
+			for i := uint16(0); i < x; i++ {
+				chip8.memory[chip8.I+i] = chip8.V[i]
+			}
+			break
+
+		case 0x0065:
+			for i := uint16(0); i < x; i++ {
+				chip8.V[i] = chip8.memory[chip8.I+i]
+			}
 			break
 		}
 	default:
